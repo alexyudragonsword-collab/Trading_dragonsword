@@ -49,30 +49,36 @@ def _save_cache(symbol: str, data: dict) -> None:
         log.warning("Cache write failed for %s: %s", symbol, e)
 
 
-def fetch_ticker(symbol: str) -> dict | None:
-    """Fetch all needed data for one ticker via yfinance."""
-    try:
-        t = yf.Ticker(symbol)
-        info = t.info or {}
-        if not info or info.get("regularMarketPrice") is None and info.get("currentPrice") is None:
-            # Likely delisted or unavailable; still store what we have
-            pass
-        data = {
-            "fetched_at": datetime.utcnow(),
-            "info": info,
-            "financials": t.financials,
-            "quarterly_financials": t.quarterly_financials,
-            "balance_sheet": t.balance_sheet,
-            "quarterly_balance_sheet": t.quarterly_balance_sheet,
-            "cashflow": t.cashflow,
-            "quarterly_cashflow": t.quarterly_cashflow,
-            "history_1y": t.history(period="1y"),
-            "history_2y": t.history(period="2y"),
-        }
-        return data
-    except Exception as e:
-        log.warning("Failed to fetch %s: %s", symbol, e)
-        return None
+def fetch_ticker(symbol: str, max_retries: int = 3) -> dict | None:
+    """Fetch all needed data for one ticker via yfinance, with retry on rate-limit."""
+    for attempt in range(max_retries):
+        try:
+            t = yf.Ticker(symbol)
+            info = t.info or {}
+            data = {
+                "fetched_at": datetime.utcnow(),
+                "info": info,
+                "financials": t.financials,
+                "quarterly_financials": t.quarterly_financials,
+                "balance_sheet": t.balance_sheet,
+                "quarterly_balance_sheet": t.quarterly_balance_sheet,
+                "cashflow": t.cashflow,
+                "quarterly_cashflow": t.quarterly_cashflow,
+                "history_1y": t.history(period="1y"),
+                "history_2y": t.history(period="2y"),
+            }
+            return data
+        except Exception as e:
+            msg = str(e).lower()
+            is_rate_limit = "too many requests" in msg or "429" in msg or "rate limit" in msg
+            if is_rate_limit and attempt < max_retries - 1:
+                wait = 2 ** (attempt + 1)   # 2s, 4s, 8s
+                log.warning("Rate limited on %s, retrying in %ss…", symbol, wait)
+                time.sleep(wait)
+            else:
+                log.warning("Failed to fetch %s: %s", symbol, e)
+                return None
+    return None
 
 
 def load_ticker(symbol: str, force_refresh: bool = False) -> dict | None:
@@ -103,7 +109,7 @@ def load_all(
         if progress_callback:
             progress_callback(i, total, symbol)
         result[symbol] = load_ticker(symbol, force_refresh=force_refresh)
-        time.sleep(0.2)
+        time.sleep(0.5)   # conservative delay to stay under Yahoo Finance rate limits
     if progress_callback:
         progress_callback(total, total, "")
     return result
