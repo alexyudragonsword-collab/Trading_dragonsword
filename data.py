@@ -1,5 +1,6 @@
 """yfinance data fetching with disk-based pickle cache (TTL 4 hours)."""
 
+import os
 import pickle
 import time
 import logging
@@ -7,15 +8,47 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-import os
-
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import yfinance as yf
 
-# Allow override via env var so production volumes can be mounted at a custom path
 CACHE_DIR = Path(os.environ.get("CACHE_DIR", ".cache"))
 CACHE_TTL_HOURS = 4
 
 log = logging.getLogger(__name__)
+
+# Browser-like headers to avoid Yahoo Finance blocking cloud server IPs
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+}
+
+
+def _make_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update(_HEADERS)
+    retry = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+# One shared session per process reuses cookies across tickers
+_SESSION = _make_session()
 
 
 def _cache_path(symbol: str) -> Path:
@@ -53,7 +86,7 @@ def fetch_ticker(symbol: str, max_retries: int = 3) -> dict | None:
     """Fetch all needed data for one ticker via yfinance, with retry on rate-limit."""
     for attempt in range(max_retries):
         try:
-            t = yf.Ticker(symbol)
+            t = yf.Ticker(symbol, session=_SESSION)
             info = t.info or {}
             data = {
                 "fetched_at": datetime.utcnow(),
@@ -72,7 +105,7 @@ def fetch_ticker(symbol: str, max_retries: int = 3) -> dict | None:
             msg = str(e).lower()
             is_rate_limit = "too many requests" in msg or "429" in msg or "rate limit" in msg
             if is_rate_limit and attempt < max_retries - 1:
-                wait = 2 ** (attempt + 1)   # 2s, 4s, 8s
+                wait = 2 ** (attempt + 2)   # 4s, 8s, 16s
                 log.warning("Rate limited on %s, retrying in %ss…", symbol, wait)
                 time.sleep(wait)
             else:
@@ -109,7 +142,7 @@ def load_all(
         if progress_callback:
             progress_callback(i, total, symbol)
         result[symbol] = load_ticker(symbol, force_refresh=force_refresh)
-        time.sleep(0.5)   # conservative delay to stay under Yahoo Finance rate limits
+        time.sleep(0.5)
     if progress_callback:
         progress_callback(total, total, "")
     return result
