@@ -116,6 +116,19 @@ Trading_dragonsword/
 | `utils.py` | `safe_get()`, `normalize_weights()`, `format_pct()`, `format_ratio()` |
 | `app.py` | Streamlit page, sidebar, 3 tabs (screener table, heatmap, stock detail) |
 
+### Deployment files
+
+| File | Purpose |
+|------|---------|
+| `Dockerfile` | Multi-stage Docker image |
+| `.dockerignore` | Exclude cache/build artifacts from image |
+| `docker-compose.yml` | Local Docker testing with persistent cache volume |
+| `.streamlit/config.toml` | Production Streamlit settings (headless, dark theme) |
+| `render.yaml` | Render.com blueprint |
+| `railway.toml` | Railway deployment config |
+| `nixpacks.toml` | Nixpacks build config (used by Railway) |
+| `Procfile` | Heroku / generic PaaS start command |
+
 ---
 
 ## Factor Reference
@@ -130,6 +143,67 @@ Trading_dragonsword/
 | Quality | D/E ratio (lower = better), FCF Yield |
 
 All factors are Z-score normalized across the universe, clipped to ±3. Lower-is-better factors are sign-flipped so all Z-scores are "higher = better". RSI uses a centrality transform (`1 - |RSI - 55| / 45`) before Z-scoring.
+
+---
+
+## Deployment
+
+### Environment variable
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CACHE_DIR` | `.cache` | Path for yfinance pickle cache; set to a persistent volume path in production |
+| `PORT` | `8501` | Injected automatically by Render / Railway; Streamlit start command reads `$PORT` |
+
+### Option 1 — Docker (self-hosted / any cloud)
+
+```sh
+# Build and run locally
+docker build -t semiconductor-screener .
+docker run -p 8501:8501 semiconductor-screener
+
+# Or with docker-compose (includes persistent cache volume)
+docker compose up --build
+
+# App available at http://localhost:8501
+```
+
+Deploy the image to any registry (Docker Hub, GHCR, ECR) and run on any container platform.
+
+### Option 2 — Docker Compose (VPS / home server)
+
+```sh
+docker compose up -d          # start in background
+docker compose logs -f        # tail logs
+docker compose down           # stop
+```
+
+The `screener_cache` named volume persists ticker data across container restarts.
+
+### Option 3 — Render.com
+
+1. Push this repo to GitHub (public or private).
+2. Go to [render.com](https://render.com) → New → Blueprint.
+3. Point to the repo — `render.yaml` is auto-detected.
+4. Deploy. First build ~3 min; app available at `https://<name>.onrender.com`.
+
+> **Free tier note**: Render free web services sleep after 15 min of inactivity. The persistent disk requires a paid plan; remove the `disk:` block from `render.yaml` to run without it (cache resets on each wake).
+
+### Option 4 — Railway
+
+1. Push to GitHub.
+2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub repo.
+3. `railway.toml` is auto-detected. Set `CACHE_DIR` env var to a Railway volume mount if needed.
+4. Deploy.
+
+### Option 5 — Streamlit Community Cloud (free, zero-config)
+
+1. Push to a **public** GitHub repo.
+2. Go to [share.streamlit.io](https://share.streamlit.io) → New app.
+3. Set: Repo = this repo, Branch = `main`, Main file = `app.py`.
+4. Deploy. No `Dockerfile` or env vars needed.
+
+> **Free tier note**: Apps sleep after inactivity; cache resets on each wake. Cold start takes ~15 s while data fetches. Suitable for personal demos.
 
 ---
 

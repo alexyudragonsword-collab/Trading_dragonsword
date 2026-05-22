@@ -1,0 +1,27 @@
+# Render.com deployment configuration
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: semiconductor-screener
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      streamlit run app.py
+      --server.port $PORT
+      --server.address 0.0.0.0
+      --server.headless true
+      --server.enableCORS false
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: CACHE_DIR
+        value: /app/.cache
+    # Persistent disk to survive deploys (requires paid plan)
+    # Remove the disk block if using the free tier
+    disk:
+      name: screener-cache
+      mountPath: /app/.cache
+      sizeGB: 1
+    healthCheckPath: /_stcore/health
+    autoDeploy: true

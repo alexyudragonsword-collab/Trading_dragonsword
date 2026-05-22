@@ -7,9 +7,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
+import os
+
 import yfinance as yf
 
-CACHE_DIR = Path(".cache")
+# Allow override via env var so production volumes can be mounted at a custom path
+CACHE_DIR = Path(os.environ.get("CACHE_DIR", ".cache"))
 CACHE_TTL_HOURS = 4
 
 log = logging.getLogger(__name__)
