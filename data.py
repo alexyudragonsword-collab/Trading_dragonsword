@@ -1,4 +1,4 @@
-"""yfinance data fetching with disk-based pickle cache (TTL 4 hours)."""
+"""Financial Modeling Prep (FMP) data fetching with disk-based pickle cache (TTL 4h)."""
 
 import os
 import pickle
@@ -11,45 +11,82 @@ from typing import Callable
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import yfinance as yf
 
 CACHE_DIR = Path(os.environ.get("CACHE_DIR", ".cache"))
 CACHE_TTL_HOURS = 4
+FMP_BASE = "https://financialmodelingprep.com/api"
 
 log = logging.getLogger(__name__)
-
-# Browser-like headers to avoid Yahoo Finance blocking cloud server IPs
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-}
 
 
 def _make_session() -> requests.Session:
     session = requests.Session()
-    session.headers.update(_HEADERS)
+    session.headers.update({"Accept": "application/json", "User-Agent": "Mozilla/5.0"})
     retry = Retry(
-        total=3,
-        backoff_factor=1,
+        total=3, backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
     )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
+    session.mount("https://", HTTPAdapter(max_retries=retry))
     return session
 
 
-# One shared session per process reuses cookies across tickers
 _SESSION = _make_session()
 
+
+def get_api_key() -> str | None:
+    return os.environ.get("FMP_API_KEY") or None
+
+
+def _fmp_get(path: str, params: dict | None = None) -> dict | list | None:
+    api_key = get_api_key()
+    if not api_key:
+        return None
+    url = f"{FMP_BASE}{path}"
+    p = {"apikey": api_key}
+    if params:
+        p.update(params)
+    try:
+        resp = _SESSION.get(url, params=p, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        # FMP returns {"Error Message": "..."} with 200 on quota exceeded
+        if isinstance(data, dict) and ("Error Message" in data or "error" in data):
+            msg = data.get("Error Message") or data.get("error", "unknown error")
+            log.warning("FMP API error for %s: %s", path, msg)
+            return None
+        return data
+    except Exception as e:
+        log.warning("FMP request failed %s: %s", path, e)
+        return None
+
+
+def fetch_ticker(symbol: str) -> dict | None:
+    """Fetch all data for one ticker via FMP (4 API calls)."""
+    profile_raw = _fmp_get(f"/v3/profile/{symbol}")
+    ratios_raw  = _fmp_get(f"/v3/ratios-ttm/{symbol}")
+    growth_raw  = _fmp_get(f"/v3/income-statement-growth/{symbol}", {"limit": 1})
+    price_raw   = _fmp_get(f"/v3/historical-price-full/{symbol}", {"timeseries": 300})
+
+    profile = profile_raw[0] if isinstance(profile_raw, list) and profile_raw else {}
+    ratios  = ratios_raw[0]  if isinstance(ratios_raw,  list) and ratios_raw  else {}
+    growth  = growth_raw[0]  if isinstance(growth_raw,  list) and growth_raw  else {}
+    history = price_raw.get("historical", []) if isinstance(price_raw, dict) else []
+
+    if not profile and not ratios:
+        log.warning("No data returned for %s", symbol)
+        return None
+
+    return {
+        "fetched_at": datetime.utcnow(),
+        "profile": profile,   # mktCap, exchange, sector, beta, price
+        "ratios":  ratios,    # PE, PB, PS, EV/EBITDA, margins, ROE, ROA, D/E, FCF yield
+        "growth":  growth,    # growthRevenue, growthEPS
+        "history": history,   # list of dicts [{date, open, high, low, close, adjClose, volume}], newest first
+    }
+
+
+# ── Cache helpers ─────────────────────────────────────────────────────────────
 
 def _cache_path(symbol: str) -> Path:
     return CACHE_DIR / f"{symbol}.pkl"
@@ -82,45 +119,11 @@ def _save_cache(symbol: str, data: dict) -> None:
         log.warning("Cache write failed for %s: %s", symbol, e)
 
 
-def fetch_ticker(symbol: str, max_retries: int = 3) -> dict | None:
-    """Fetch all needed data for one ticker via yfinance, with retry on rate-limit."""
-    for attempt in range(max_retries):
-        try:
-            t = yf.Ticker(symbol, session=_SESSION)
-            info = t.info or {}
-            data = {
-                "fetched_at": datetime.utcnow(),
-                "info": info,
-                "financials": t.financials,
-                "quarterly_financials": t.quarterly_financials,
-                "balance_sheet": t.balance_sheet,
-                "quarterly_balance_sheet": t.quarterly_balance_sheet,
-                "cashflow": t.cashflow,
-                "quarterly_cashflow": t.quarterly_cashflow,
-                "history_1y": t.history(period="1y"),
-                "history_2y": t.history(period="2y"),
-            }
-            return data
-        except Exception as e:
-            msg = str(e).lower()
-            is_rate_limit = "too many requests" in msg or "429" in msg or "rate limit" in msg
-            if is_rate_limit and attempt < max_retries - 1:
-                wait = 2 ** (attempt + 2)   # 4s, 8s, 16s
-                log.warning("Rate limited on %s, retrying in %ss…", symbol, wait)
-                time.sleep(wait)
-            else:
-                log.warning("Failed to fetch %s: %s", symbol, e)
-                return None
-    return None
-
-
 def load_ticker(symbol: str, force_refresh: bool = False) -> dict | None:
-    """Return ticker data from cache if fresh, otherwise refetch."""
     if not force_refresh:
         cached = _load_cache(symbol)
         if cached is not None and _is_fresh(cached):
             return cached
-
     data = fetch_ticker(symbol)
     if data is not None:
         _save_cache(symbol, data)
@@ -132,41 +135,34 @@ def load_all(
     force_refresh: bool = False,
     progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> dict[str, dict | None]:
-    """
-    Load data for all tickers. Returns dict mapping symbol → data dict (or None).
-    progress_callback(i, total, symbol) is called before each fetch.
-    """
     result: dict[str, dict | None] = {}
     total = len(tickers)
     for i, symbol in enumerate(tickers):
         if progress_callback:
             progress_callback(i, total, symbol)
         result[symbol] = load_ticker(symbol, force_refresh=force_refresh)
-        time.sleep(0.5)
+        time.sleep(0.3)
     if progress_callback:
         progress_callback(total, total, "")
     return result
 
 
 def get_cache_status(tickers: list[str]) -> dict:
-    """Return info about what's cached and when it was last fetched."""
     status = {}
     for symbol in tickers:
         cached = _load_cache(symbol)
         if cached is None:
             status[symbol] = {"cached": False, "fetched_at": None, "fresh": False}
         else:
-            fresh = _is_fresh(cached)
             status[symbol] = {
                 "cached": True,
                 "fetched_at": cached.get("fetched_at"),
-                "fresh": fresh,
+                "fresh": _is_fresh(cached),
             }
     return status
 
 
 def clear_cache(tickers: list[str] | None = None) -> None:
-    """Delete cache files. If tickers is None, clears all."""
     if not CACHE_DIR.exists():
         return
     if tickers is None:

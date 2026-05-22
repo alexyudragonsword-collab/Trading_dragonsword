@@ -17,6 +17,8 @@ services:
         value: "3.11.0"
       - key: CACHE_DIR
         value: /app/.cache
+      - key: FMP_API_KEY
+        sync: false   # set this manually in the Render dashboard
     # Persistent disk to survive deploys (requires paid plan)
     # Remove the disk block if using the free tier
     disk:

@@ -1,6 +1,7 @@
 """Semiconductor Stock Screener — Streamlit entry point."""
 
 import math
+import os
 
 import numpy as np
 import pandas as pd
@@ -24,8 +25,28 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── API key resolution (env var → st.secrets) ────────────────────────────────
+# Set FMP_API_KEY in environment variables (Docker/Railway/Render) or
+# in Streamlit Cloud's Secrets manager as:  FMP_API_KEY = "your_key"
+_api_key = os.environ.get("FMP_API_KEY", "")
+if not _api_key:
+    try:
+        _api_key = st.secrets.get("FMP_API_KEY", "")
+    except Exception:
+        pass
+if _api_key:
+    os.environ["FMP_API_KEY"] = _api_key
+else:
+    st.error(
+        "**FMP_API_KEY 未配置。**\n\n"
+        "请前往 https://financialmodelingprep.com 免费注册，然后：\n"
+        "- **Streamlit Cloud**：在 App Settings → Secrets 中添加 `FMP_API_KEY = \"your_key\"`\n"
+        "- **Docker / Render / Railway**：设置环境变量 `FMP_API_KEY=your_key`"
+    )
+    st.stop()
+
 st.title("半导体板块选股系统")
-st.caption("数据来源：Yahoo Finance（yfinance）  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
+st.caption("数据来源：Financial Modeling Prep（FMP）  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
@@ -123,8 +144,8 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     if min_mktcap > 0:
         keep = []
         for ticker in df.index:
-            info = (raw_data.get(ticker) or {}).get("info") or {}
-            mktcap = info.get("marketCap") or 0
+            profile = (raw_data.get(ticker) or {}).get("profile") or {}
+            mktcap = profile.get("mktCap") or 0
             if mktcap >= min_mktcap:
                 keep.append(ticker)
         df = df.loc[keep]
@@ -280,14 +301,12 @@ with tab3:
 
         # Price chart with MAs and MACD
         raw = raw_data.get(selected)
-        hist = None
+        close = None
         if raw:
-            hist_1y = raw.get("history_1y")
-            if hist_1y is not None and not hist_1y.empty:
-                hist = hist_1y
+            from factors import _to_close_series
+            close = _to_close_series(raw.get("history") or [])
 
-        if hist is not None:
-            close = hist["Close"]
+        if close is not None and len(close) > 10:
             ma50 = close.rolling(50).mean()
             ma200 = close.rolling(200).mean()
 
