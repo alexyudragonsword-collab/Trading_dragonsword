@@ -1,10 +1,12 @@
-"""Compute 22 quantitative factors for a single ticker from FMP data."""
+"""Compute 22 quantitative factors from FMP free-tier financial statement data."""
 
 import numpy as np
 import pandas as pd
 
 from utils import safe_get
 
+
+# ── Price history helpers ──────────────────────────────────────────────────────
 
 def _to_close_series(history: list) -> pd.Series | None:
     """Convert FMP history list (newest first) to a date-indexed Series (oldest first)."""
@@ -17,9 +19,7 @@ def _to_close_series(history: list) -> pd.Series | None:
         if val is not None:
             dates.append(pd.to_datetime(item["date"]))
             closes.append(float(val))
-    if not closes:
-        return None
-    return pd.Series(closes, index=dates, dtype=float)
+    return pd.Series(closes, index=dates, dtype=float) if closes else None
 
 
 def _pct_return(close: pd.Series, n_days: int) -> float | None:
@@ -35,8 +35,7 @@ def _rsi(close: pd.Series, period: int = 14) -> float | None:
     gain  = delta.clip(lower=0).rolling(period).mean()
     loss  = (-delta.clip(upper=0)).rolling(period).mean()
     rs    = gain / loss
-    rsi   = 100 - (100 / (1 + rs))
-    val   = rsi.iloc[-1]
+    val   = (100 - 100 / (1 + rs)).iloc[-1]
     return float(val) if pd.notna(val) else None
 
 
@@ -50,47 +49,87 @@ def _macd_signal(close: pd.Series) -> float | None:
     return float(np.sign(val)) if pd.notna(val) else None
 
 
+# ── Safe numeric helper ────────────────────────────────────────────────────────
+
+def _num(d: dict, *keys) -> float | None:
+    for k in keys:
+        v = safe_get(d, k)
+        if v is not None:
+            try:
+                f = float(v)
+                return f if np.isfinite(f) else None
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def _safe_div(a, b) -> float | None:
+    if a is None or b is None or b == 0:
+        return None
+    result = a / b
+    return float(result) if np.isfinite(result) else None
+
+
+# ── Main factor computation ────────────────────────────────────────────────────
+
 def compute_factors(symbol: str, raw: dict) -> dict | None:
-    """Return flat dict of 22 factor values (float | None), or None if data is unusable."""
+    """Return flat dict of 22 factor values (float | None), or None if unusable."""
     if raw is None:
         return None
 
-    ratios  = raw.get("ratios")  or {}
-    growth  = raw.get("growth")  or {}
-    profile = raw.get("profile") or {}
-    history = raw.get("history") or []
+    profile  = raw.get("profile")  or {}
+    income   = raw.get("income")   or []   # [most_recent, prior_year]
+    balance  = raw.get("balance")  or {}
+    cashflow = raw.get("cashflow") or {}
+    history  = raw.get("history")  or []
 
+    cur  = income[0] if len(income) > 0 else {}
+    prev = income[1] if len(income) > 1 else {}
     close = _to_close_series(history)
 
-    # ── Valuation ─────────────────────────────────────────────────────────────
-    def _f(d, *keys):
-        """Return first non-None float from d matching any key."""
-        for k in keys:
-            v = safe_get(d, k)
-            if v is not None:
-                try:
-                    return float(v)
-                except (TypeError, ValueError):
-                    pass
-        return None
+    # Shared base values
+    price   = _num(profile, "price")
+    mkt_cap = _num(profile, "mktCap")
+    revenue     = _num(cur, "revenue")
+    gross_prof  = _num(cur, "grossProfit")
+    op_income   = _num(cur, "operatingIncome")
+    net_income  = _num(cur, "netIncome")
+    ebitda      = _num(cur, "ebitda")
+    eps         = _num(cur, "epsdiluted", "eps")
+    total_assets = _num(balance, "totalAssets")
+    total_equity = _num(balance, "totalStockholdersEquity")
+    total_debt   = _num(balance, "totalDebt")
+    cash         = _num(balance, "cashAndCashEquivalents")
+    op_cf        = _num(cashflow, "operatingCashFlow")
+    capex        = _num(cashflow, "capitalExpenditure")  # negative in FMP
+    fcf_direct   = _num(cashflow, "freeCashFlow")
 
-    pe       = _f(ratios, "peRatioTTM")
-    pb       = _f(ratios, "priceToBookRatioTTM")
-    ps       = _f(ratios, "priceToSalesRatioTTM")
-    ev_ebitda = _f(ratios, "enterpriseValueMultipleTTM")
+    # ── Valuation ────────────────────────────────────────────────────────────
+    pe = _safe_div(price, eps)
+    pb = _safe_div(mkt_cap, total_equity)
+    ps = _safe_div(mkt_cap, revenue)
 
-    # ── Growth ────────────────────────────────────────────────────────────────
-    revenue_growth = _f(growth, "growthRevenue")
-    eps_growth     = _f(growth, "growthEPS", "growthEps")
+    ev_ebitda = None
+    if mkt_cap is not None and total_debt is not None and cash is not None and ebitda and ebitda > 0:
+        ev = mkt_cap + total_debt - cash
+        ev_ebitda = _safe_div(ev, ebitda)
+
+    # ── Growth ───────────────────────────────────────────────────────────────
+    prev_revenue = _num(prev, "revenue")
+    prev_eps     = _num(prev, "epsdiluted", "eps")
+    revenue_growth = _safe_div((revenue or 0) - (prev_revenue or 0), abs(prev_revenue)) \
+        if revenue is not None and prev_revenue else None
+    eps_growth = _safe_div((eps or 0) - (prev_eps or 0), abs(prev_eps)) \
+        if eps is not None and prev_eps else None
 
     # ── Profitability ─────────────────────────────────────────────────────────
-    gross_margin     = _f(ratios, "grossProfitMarginTTM")
-    operating_margin = _f(ratios, "operatingProfitMarginTTM")
-    net_margin       = _f(ratios, "netProfitMarginTTM")
-    roe              = _f(ratios, "returnOnEquityTTM")
-    roa              = _f(ratios, "returnOnAssetsTTM")
+    gross_margin     = _safe_div(gross_prof, revenue)
+    operating_margin = _safe_div(op_income,  revenue)
+    net_margin       = _safe_div(net_income, revenue)
+    roe              = _safe_div(net_income, total_equity)
+    roa              = _safe_div(net_income, total_assets)
 
-    # ── Momentum ──────────────────────────────────────────────────────────────
+    # ── Momentum ─────────────────────────────────────────────────────────────
     mom_1m  = _pct_return(close, 21)
     mom_3m  = _pct_return(close, 63)
     mom_6m  = _pct_return(close, 126)
@@ -102,17 +141,22 @@ def compute_factors(symbol: str, raw: dict) -> dict | None:
 
     above_50ma = above_200ma = golden_cross = None
     if close is not None and len(close) >= 50:
-        price = float(close.iloc[-1])
-        ma50  = float(close.rolling(50).mean().iloc[-1])
-        above_50ma = 1.0 if price > ma50 else 0.0
+        price_now = float(close.iloc[-1])
+        ma50 = float(close.rolling(50).mean().iloc[-1])
+        above_50ma = 1.0 if price_now > ma50 else 0.0
         if len(close) >= 200:
             ma200 = float(close.rolling(200).mean().iloc[-1])
-            above_200ma  = 1.0 if price > ma200 else 0.0
+            above_200ma  = 1.0 if price_now > ma200 else 0.0
             golden_cross = 1.0 if ma50 > ma200 else 0.0
 
-    # ── Quality ───────────────────────────────────────────────────────────────
-    debt_to_equity = _f(ratios, "debtEquityRatioTTM")
-    fcf_yield      = _f(ratios, "freeCashFlowYieldTTM")
+    # ── Quality ──────────────────────────────────────────────────────────────
+    debt_to_equity = _safe_div(total_debt, total_equity)
+
+    # FCF = operating cash flow + capex (capex is negative in FMP)
+    fcf = fcf_direct if fcf_direct is not None else (
+        (op_cf + capex) if op_cf is not None and capex is not None else op_cf
+    )
+    fcf_yield = _safe_div(fcf, mkt_cap)
 
     return {
         "pe": pe, "pb": pb, "ps": ps, "ev_ebitda": ev_ebitda,
