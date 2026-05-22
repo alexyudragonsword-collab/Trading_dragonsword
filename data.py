@@ -1,11 +1,12 @@
-"""FMP data fetching — free-tier endpoints only, with disk cache (TTL 4h).
+"""Alpha Vantage data fetching with disk cache (TTL 4h).
 
-Free endpoints used per ticker (5 calls):
-  /v3/profile/{symbol}                          → price, mktCap, sector
-  /v3/income-statement/{symbol}?limit=2         → revenue, margins, EPS (2 years)
-  /v3/balance-sheet-statement/{symbol}?limit=1  → assets, equity, debt
-  /v3/cash-flow-statement/{symbol}?limit=1      → operating CF, capex
-  /v3/historical-price-full/{symbol}?timeseries=300 → price history
+Two API calls per ticker:
+  OVERVIEW                        → all fundamental ratios directly
+  TIME_SERIES_DAILY_ADJUSTED      → price history for momentum & technical
+
+Free tier: 25 requests/minute, 500/day.
+Sleep 2.5s between calls keeps us at ~24 req/min.
+Cold fetch for ~43 tickers ≈ 4 minutes; subsequent loads use cache.
 """
 
 import os
@@ -22,7 +23,7 @@ from urllib3.util.retry import Retry
 
 CACHE_DIR = Path(os.environ.get("CACHE_DIR", ".cache"))
 CACHE_TTL_HOURS = 4
-FMP_BASE = "https://financialmodelingprep.com/api"
+AV_BASE = "https://www.alphavantage.co/query"
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def _make_session() -> requests.Session:
     session = requests.Session()
     session.headers.update({"Accept": "application/json", "User-Agent": "Mozilla/5.0"})
     retry = Retry(
-        total=3, backoff_factor=1,
+        total=3, backoff_factor=2,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
     )
@@ -43,56 +44,66 @@ _SESSION = _make_session()
 
 
 def get_api_key() -> str | None:
-    return os.environ.get("FMP_API_KEY") or None
+    return os.environ.get("AV_API_KEY") or None
 
 
-def _fmp_get(path: str, params: dict | None = None) -> dict | list | None:
+def _av_get(function: str, symbol: str, extra: dict | None = None) -> dict | None:
     api_key = get_api_key()
     if not api_key:
         return None
-    url = f"{FMP_BASE}{path}"
-    p = {"apikey": api_key}
-    if params:
-        p.update(params)
+    params = {"function": function, "symbol": symbol, "apikey": api_key}
+    if extra:
+        params.update(extra)
     try:
-        resp = _SESSION.get(url, params=p, timeout=15)
+        resp = _SESSION.get(AV_BASE, params=params, timeout=20)
         resp.raise_for_status()
         data = resp.json()
-        if isinstance(data, dict) and ("Error Message" in data or "error" in data):
-            log.warning("FMP API error for %s: %s", path,
-                        data.get("Error Message") or data.get("error"))
+        # AV returns {"Information": "..."} or {"Note": "..."} on quota/error
+        if "Information" in data or "Note" in data:
+            log.warning("AV quota/info message for %s %s: %s",
+                        function, symbol,
+                        data.get("Information") or data.get("Note"))
+            return None
+        if "Error Message" in data:
+            log.warning("AV error for %s %s: %s", function, symbol, data["Error Message"])
             return None
         return data
     except Exception as e:
-        log.warning("FMP request failed %s: %s", path, e)
+        log.warning("AV request failed %s %s: %s", function, symbol, e)
         return None
 
 
 def fetch_ticker(symbol: str) -> dict | None:
-    """Fetch all data for one ticker using only FMP free-tier endpoints."""
-    profile_raw  = _fmp_get(f"/v3/profile/{symbol}")
-    income_raw   = _fmp_get(f"/v3/income-statement/{symbol}",          {"limit": 2})
-    balance_raw  = _fmp_get(f"/v3/balance-sheet-statement/{symbol}",   {"limit": 1})
-    cashflow_raw = _fmp_get(f"/v3/cash-flow-statement/{symbol}",       {"limit": 1})
-    price_raw    = _fmp_get(f"/v3/historical-price-full/{symbol}",     {"timeseries": 300})
+    """Fetch overview + daily price history from Alpha Vantage (2 API calls)."""
+    overview = _av_get("OVERVIEW", symbol)
+    time.sleep(2.5)   # stay under 25 req/min free-tier limit
 
-    profile  = profile_raw[0]  if isinstance(profile_raw,  list) and profile_raw  else {}
-    income   = income_raw      if isinstance(income_raw,   list) else []   # [current, prior]
-    balance  = balance_raw[0]  if isinstance(balance_raw,  list) and balance_raw  else {}
-    cashflow = cashflow_raw[0] if isinstance(cashflow_raw, list) and cashflow_raw else {}
-    history  = price_raw.get("historical", []) if isinstance(price_raw, dict) else []
+    prices_raw = _av_get(
+        "TIME_SERIES_DAILY_ADJUSTED", symbol,
+        {"outputsize": "full", "datatype": "json"},
+    )
+    time.sleep(2.5)
 
-    if not profile and not income:
+    if not overview and not prices_raw:
         log.warning("No data returned for %s", symbol)
         return None
 
+    # Parse price history into a clean list [{date, close}] newest first
+    ts = (prices_raw or {}).get("Time Series (Daily)", {})
+    history = [
+        {
+            "date":  date,
+            "close": float(vals.get("5. adjusted close") or vals.get("4. close") or 0),
+        }
+        for date, vals in ts.items()
+        if vals.get("5. adjusted close") or vals.get("4. close")
+    ]
+    # ts dict is already newest-first from AV
+
     return {
         "fetched_at": datetime.utcnow(),
-        "profile":  profile,   # price, mktCap, sector
-        "income":   income,    # list: [most_recent_annual, prior_annual]
-        "balance":  balance,   # totalAssets, totalEquity, totalDebt, cash
-        "cashflow": cashflow,  # operatingCashFlow, capitalExpenditure, freeCashFlow
-        "history":  history,   # [{date, adjClose, close, ...}] newest first
+        "overview": overview or {},
+        "history":  history,      # [{date, close}] newest first
     }
 
 
@@ -151,7 +162,7 @@ def load_all(
         if progress_callback:
             progress_callback(i, total, symbol)
         result[symbol] = load_ticker(symbol, force_refresh=force_refresh)
-        time.sleep(0.3)
+        # inter-ticker gap only (intra-ticker sleeps are in fetch_ticker)
     if progress_callback:
         progress_callback(total, total, "")
     return result

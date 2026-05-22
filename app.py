@@ -28,25 +28,25 @@ st.set_page_config(
 # ── API key resolution (env var → st.secrets) ────────────────────────────────
 # Set FMP_API_KEY in environment variables (Docker/Railway/Render) or
 # in Streamlit Cloud's Secrets manager as:  FMP_API_KEY = "your_key"
-_api_key = os.environ.get("FMP_API_KEY", "")
+_api_key = os.environ.get("AV_API_KEY", "")
 if not _api_key:
     try:
-        _api_key = st.secrets.get("FMP_API_KEY", "")
+        _api_key = st.secrets.get("AV_API_KEY", "")
     except Exception:
         pass
 if _api_key:
-    os.environ["FMP_API_KEY"] = _api_key
+    os.environ["AV_API_KEY"] = _api_key
 else:
     st.error(
-        "**FMP_API_KEY 未配置。**\n\n"
-        "请前往 https://financialmodelingprep.com 免费注册，然后：\n"
-        "- **Streamlit Cloud**：在 App Settings → Secrets 中添加 `FMP_API_KEY = \"your_key\"`\n"
-        "- **Docker / Render / Railway**：设置环境变量 `FMP_API_KEY=your_key`"
+        "**AV_API_KEY 未配置。**\n\n"
+        "请前往 https://www.alphavantage.co/support/#api-key 免费注册，然后：\n"
+        "- **Streamlit Cloud**：在 App Settings → Secrets 中添加 `AV_API_KEY = \"your_key\"`\n"
+        "- **Docker / Render / Railway**：设置环境变量 `AV_API_KEY=your_key`"
     )
     st.stop()
 
 st.title("半导体板块选股系统")
-st.caption("数据来源：Financial Modeling Prep（FMP）  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
+st.caption("数据来源：Alpha Vantage  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
@@ -144,8 +144,11 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     if min_mktcap > 0:
         keep = []
         for ticker in df.index:
-            profile = (raw_data.get(ticker) or {}).get("profile") or {}
-            mktcap = profile.get("mktCap") or 0
+            ov = (raw_data.get(ticker) or {}).get("overview") or {}
+            try:
+                mktcap = float(ov.get("MarketCapitalization") or 0)
+            except (TypeError, ValueError):
+                mktcap = 0
             if mktcap >= min_mktcap:
                 keep.append(ticker)
         df = df.loc[keep]
