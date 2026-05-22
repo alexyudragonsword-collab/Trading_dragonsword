@@ -16,7 +16,7 @@ SUBSECTOR_MAP: dict[str, list[str]] = {
         "MU", "WDC",
     ],
     "Packaging / Test": [
-        "AMKR", "ASX",
+        "AMKR",
     ],
 }
 
