@@ -157,9 +157,11 @@ def load_all(
             _save_prices(prices_df)
         except Exception as e:
             log.warning("Batch price download failed: %s", e)
-            prices_df = _load_prices() or pd.DataFrame()
+            _loaded = _load_prices()
+            prices_df = _loaded if _loaded is not None else pd.DataFrame()
     else:
-        prices_df = _load_prices() or pd.DataFrame()
+        _loaded = _load_prices()
+        prices_df = _loaded if _loaded is not None else pd.DataFrame()
 
     # Step 2 — per-ticker info
     result: dict[str, dict | None] = {}
