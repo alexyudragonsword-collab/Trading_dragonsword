@@ -12,8 +12,11 @@ SUBSECTOR_MAP: dict[str, list[str]] = {
     ],
     "IDM / Foundry": [
         "INTC", "TXN", "ADI", "MCHP", "ON", "STM", "NXPI", "WOLF",
-        "DIOD",   # Diodes Incorporated
-        "GFS",    # GlobalFoundries
+        "DIOD",     # Diodes Incorporated
+        "GFS",      # GlobalFoundries
+        "TSM",      # Taiwan Semiconductor (TSMC)
+        "0981.HK",  # SMIC（中芯国际）
+        "1347.HK",  # Hua Hong Semiconductor（华虹半导体）
     ],
     "Equipment / EDA": [
         "AMAT", "LRCX", "KLAC", "ASML", "ONTO", "FORM", "ICHR", "ACMR",
