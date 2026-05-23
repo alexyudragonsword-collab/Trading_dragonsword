@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
+import auth
 import data as data_module
 import factors as factors_module
 import scorer as scorer_module
@@ -30,8 +31,45 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── API key resolution (env var → st.secrets) ────────────────────────────────
-# No API key needed — data is fetched from Yahoo Finance via yfinance + curl_cffi.
+# ── Auth gate ─────────────────────────────────────────────────────────────────
+
+def _login_page() -> None:
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.title("选股系统")
+        tab_in, tab_up = st.tabs(["登录", "注册"])
+
+        with tab_in:
+            with st.form("login"):
+                u = st.text_input("邮箱")
+                p = st.text_input("密码", type="password")
+                if st.form_submit_button("登录", use_container_width=True):
+                    if auth.verify(u, p):
+                        st.session_state.user = u.strip().lower()
+                        st.rerun()
+                    else:
+                        st.error("邮箱或密码错误")
+
+        with tab_up:
+            with st.form("register"):
+                u = st.text_input("邮箱")
+                p = st.text_input("密码", type="password")
+                p2 = st.text_input("确认密码", type="password")
+                if st.form_submit_button("注册", use_container_width=True):
+                    if p != p2:
+                        st.error("两次密码不一致")
+                    else:
+                        result = auth.register(u, p)
+                        if result is True:
+                            st.success("注册成功，请切换到登录标签页")
+                        else:
+                            st.error(result)
+
+if "user" not in st.session_state:
+    _login_page()
+    st.stop()
+
+# ── Authenticated ─────────────────────────────────────────────────────────────
 
 st.title("选股系统")
 st.caption("数据来源：Yahoo Finance  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
@@ -39,6 +77,11 @@ st.caption("数据来源：Yahoo Finance  |  因子：估值 · 成长 · 盈利
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
 with st.sidebar:
+    st.caption(f"👤 {st.session_state.user}")
+    if st.button("退出登录", use_container_width=True):
+        del st.session_state.user
+        st.rerun()
+    st.divider()
     st.header("因子权重")
     group_weights: dict[str, float] = {}
     for group in FACTOR_GROUPS:
