@@ -22,7 +22,7 @@ from utils import format_pct, format_ratio, format_number, normalize_weights
 # ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Semiconductor Stock Screener",
+    page_title="选股系统",
     page_icon="💎",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -31,7 +31,7 @@ st.set_page_config(
 # ── API key resolution (env var → st.secrets) ────────────────────────────────
 # No API key needed — data is fetched from Yahoo Finance via yfinance + curl_cffi.
 
-st.title("半导体板块选股系统")
+st.title("选股系统")
 st.caption("数据来源：Yahoo Finance  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
