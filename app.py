@@ -155,6 +155,16 @@ if last_times:
     latest = max(last_times)
     st.sidebar.caption(f"缓存：{fresh_count}/{len(ALL_TICKERS)} 新鲜  |  最近拉取：{latest.strftime('%H:%M:%S')}")
 
+# ── Universe Overview ─────────────────────────────────────────────────────────
+
+with st.expander(f"📋 股票池（{len(ALL_TICKERS)} 只）", expanded=False):
+    cols = st.columns(len(SUBSECTOR_MAP))
+    for col, (subsector, tickers) in zip(cols, SUBSECTOR_MAP.items()):
+        with col:
+            st.markdown(f"**{subsector}** ({len(tickers)})")
+            for t in tickers:
+                st.markdown(f"- {t}")
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
 tab1, tab2, tab3 = st.tabs(["选股排名", "因子热力图", "个股详情"])
