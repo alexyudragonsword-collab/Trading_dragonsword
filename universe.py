@@ -94,7 +94,7 @@ SECTOR_MAP: dict[str, dict[str, list[str]]] = {
             "NTES",   # NetEase（网易）
             "BILI",   # Bilibili（哔哩哔哩）
             "TCOM",   # Trip.com（携程）
-            "TME",    # Tencent Music Entertainment（腾讯音乐）
+            "TCEHY",  # Tencent Holdings ADR（腾讯控股）
             "FUTU",   # Futu Holdings（富途控股）
             "BOSS",   # Kanzhun / BOSS 直聘
         ],
