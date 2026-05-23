@@ -13,7 +13,10 @@ import data as data_module
 import factors as factors_module
 import scorer as scorer_module
 from scorer import FACTOR_META, FACTOR_GROUPS, DEFAULT_GROUP_WEIGHTS
-from universe import ALL_TICKERS, SUBSECTOR_MAP, TICKER_TO_SUBSECTOR
+from universe import (
+    ALL_TICKERS, SECTOR_MAP, SUBSECTOR_MAP,
+    TICKER_TO_SUBSECTOR, TICKER_TO_SECTOR, SUBSECTOR_TO_SECTOR,
+)
 from utils import format_pct, format_ratio, format_number, normalize_weights
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -46,9 +49,19 @@ with st.sidebar:
     st.divider()
     st.header("筛选条件")
 
-    subsector_options = list(SUBSECTOR_MAP.keys())
+    sector_options = list(SECTOR_MAP.keys())
+    selected_sectors = st.multiselect(
+        "板块", options=sector_options, default=sector_options,
+        key="filter_sectors",
+    )
+
+    available_subsectors = [
+        sub
+        for sector in selected_sectors
+        for sub in SECTOR_MAP.get(sector, {}).keys()
+    ]
     selected_subsectors = st.multiselect(
-        "子板块", options=subsector_options, default=subsector_options,
+        "子板块", options=available_subsectors, default=available_subsectors,
         key="filter_subsectors",
     )
 
@@ -118,7 +131,10 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    # Sub-sector filter
+    # Sector / sub-sector filter
+    if selected_sectors and len(selected_sectors) < len(SECTOR_MAP):
+        keep = [t for t in df.index if TICKER_TO_SECTOR.get(t) in selected_sectors]
+        df = df.loc[keep]
     if selected_subsectors and len(selected_subsectors) < len(SUBSECTOR_MAP):
         keep = [t for t in df.index if TICKER_TO_SUBSECTOR.get(t) in selected_subsectors]
         df = df.loc[keep]
@@ -158,12 +174,16 @@ if last_times:
 # ── Universe Overview ─────────────────────────────────────────────────────────
 
 with st.expander(f"📋 股票池（{len(ALL_TICKERS)} 只）", expanded=False):
-    cols = st.columns(len(SUBSECTOR_MAP))
-    for col, (subsector, tickers) in zip(cols, SUBSECTOR_MAP.items()):
-        with col:
-            st.markdown(f"**{subsector}** ({len(tickers)})")
-            for t in tickers:
-                st.markdown(f"- {t}")
+    for sector, subsectors in SECTOR_MAP.items():
+        st.markdown(f"**{sector}**")
+        cols = st.columns(len(subsectors))
+        for col, (subsector, _) in zip(cols, subsectors.items()):
+            deduped = SUBSECTOR_MAP.get(subsector, [])
+            with col:
+                st.markdown(f"_{subsector}_ ({len(deduped)})")
+                for t in deduped:
+                    st.markdown(f"- {t}")
+        st.divider()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
@@ -186,8 +206,9 @@ with tab1:
 
         show_df = filtered_df[list(display_cols.keys())].copy()
 
-        # Add sub-sector column
+        # Add sector and sub-sector columns
         show_df.insert(0, "子板块", [TICKER_TO_SUBSECTOR.get(t, "—") for t in show_df.index])
+        show_df.insert(0, "板块", [TICKER_TO_SECTOR.get(t, "—") for t in show_df.index])
         show_df.index.name = "股票"
 
         st.subheader(f"共 {len(show_df)} 只股票")
@@ -282,7 +303,9 @@ with tab3:
             key="detail_ticker",
         )
 
-        st.subheader(f"{selected}  —  {TICKER_TO_SUBSECTOR.get(selected, '半导体')}")
+        sector_label = TICKER_TO_SECTOR.get(selected, "")
+        subsector_label = TICKER_TO_SUBSECTOR.get(selected, "")
+        st.subheader(f"{selected}  —  {sector_label} · {subsector_label}")
 
         col_score, col_quality, col_subsector = st.columns(3)
         composite = filtered_df.loc[selected, "composite_score"]
