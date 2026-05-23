@@ -29,7 +29,7 @@ st.set_page_config(
 # No API key needed — data is fetched from Yahoo Finance via yfinance + curl_cffi.
 
 st.title("半导体板块选股系统")
-st.caption("数据来源：Yahoo Finance（yfinance + curl_cffi）  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
+st.caption("数据来源：Yahoo Finance  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
