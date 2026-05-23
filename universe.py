@@ -4,21 +4,43 @@ SUBSECTOR_MAP: dict[str, list[str]] = {
     "Fabless Design": [
         "NVDA", "AMD", "QCOM", "AVGO", "MRVL", "SWKS", "QRVO", "MPWR",
         "MTSI", "SMTC", "AMBA", "SLAB",
+        "LSCC",   # Lattice Semiconductor
+        "CRUS",   # Cirrus Logic
+        "ALGM",   # Allegro MicroSystems
+        "POWI",   # Power Integrations
+        "SITM",   # SiTime
     ],
     "IDM / Foundry": [
         "INTC", "TXN", "ADI", "MCHP", "ON", "STM", "NXPI", "WOLF",
+        "DIOD",   # Diodes Incorporated
+        "GFS",    # GlobalFoundries
     ],
     "Equipment / EDA": [
         "AMAT", "LRCX", "KLAC", "ASML", "ONTO", "FORM", "ICHR", "ACMR",
         "CAMT", "COHU",
+        "KLIC",   # Kulicke & Soffa
+        "ACLS",   # Axcelis Technologies
+        "AEHR",   # Aehr Test Systems
     ],
     "Memory": [
         "MU", "WDC",
     ],
     "Packaging / Test": [
         "AMKR",
+        "KLIC",   # Kulicke & Soffa (also packaging-adjacent)
     ],
 }
+
+# deduplicate while preserving order (KLIC appears in two groups above)
+_seen: set[str] = set()
+_deduped: dict[str, list[str]] = {}
+for _sub, _tickers in SUBSECTOR_MAP.items():
+    _deduped[_sub] = []
+    for _t in _tickers:
+        if _t not in _seen:
+            _seen.add(_t)
+            _deduped[_sub].append(_t)
+SUBSECTOR_MAP = _deduped
 
 ALL_TICKERS: list[str] = [
     ticker
