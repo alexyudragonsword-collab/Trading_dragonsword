@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
+import auth
 import data as data_module
 import factors as factors_module
 import scorer as scorer_module
@@ -30,8 +31,45 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── API key resolution (env var → st.secrets) ────────────────────────────────
-# No API key needed — data is fetched from Yahoo Finance via yfinance + curl_cffi.
+# ── Auth gate ─────────────────────────────────────────────────────────────────
+
+def _login_page() -> None:
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.title("选股系统")
+        tab_in, tab_up = st.tabs(["登录", "注册"])
+
+        with tab_in:
+            with st.form("login"):
+                u = st.text_input("邮箱")
+                p = st.text_input("密码", type="password")
+                if st.form_submit_button("登录", use_container_width=True):
+                    if auth.verify(u, p):
+                        st.session_state.user = u.strip().lower()
+                        st.rerun()
+                    else:
+                        st.error("邮箱或密码错误")
+
+        with tab_up:
+            with st.form("register"):
+                u = st.text_input("邮箱")
+                p = st.text_input("密码", type="password")
+                p2 = st.text_input("确认密码", type="password")
+                if st.form_submit_button("注册", use_container_width=True):
+                    if p != p2:
+                        st.error("两次密码不一致")
+                    else:
+                        result = auth.register(u, p)
+                        if result is True:
+                            st.success("注册成功，请切换到登录标签页")
+                        else:
+                            st.error(result)
+
+if "user" not in st.session_state:
+    _login_page()
+    st.stop()
+
+# ── Authenticated ─────────────────────────────────────────────────────────────
 
 st.title("选股系统")
 st.caption("数据来源：Yahoo Finance  |  因子：估值 · 成长 · 盈利 · 动量 · 技术 · 质量")
@@ -39,6 +77,11 @@ st.caption("数据来源：Yahoo Finance  |  因子：估值 · 成长 · 盈利
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
 with st.sidebar:
+    st.caption(f"👤 {st.session_state.user}")
+    if st.button("退出登录", use_container_width=True):
+        del st.session_state.user
+        st.rerun()
+    st.divider()
     st.header("因子权重")
     group_weights: dict[str, float] = {}
     for group in FACTOR_GROUPS:
@@ -186,9 +229,24 @@ with st.expander(f"📋 股票池（{len(ALL_TICKERS)} 只，去重后）", expa
                     st.markdown(f"- {t}")
         st.divider()
 
+# ── Admin helper ──────────────────────────────────────────────────────────────
+
+def _is_admin(email: str) -> bool:
+    try:
+        raw = st.secrets.get("ADMIN_EMAILS", "")
+    except Exception:
+        raw = os.environ.get("ADMIN_EMAILS", "")
+    return email in [e.strip().lower() for e in raw.split(",") if e.strip()]
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab1, tab2, tab3 = st.tabs(["选股排名", "因子热力图", "个股详情"])
+_tab_labels = ["选股排名", "因子热力图", "个股详情"]
+if _is_admin(st.session_state.user):
+    _tab_labels.append("管理后台")
+
+_tabs = st.tabs(_tab_labels)
+tab1, tab2, tab3 = _tabs[0], _tabs[1], _tabs[2]
+tab_admin = _tabs[3] if len(_tabs) > 3 else None
 
 # ─── Tab 1: Screener Table ───────────────────────────────────────────────────
 
@@ -433,3 +491,27 @@ with tab3:
                 use_container_width=True,
                 height=580,
             )
+
+# ─── Tab 4: Admin ─────────────────────────────────────────────────────────────
+
+if tab_admin is not None:
+    with tab_admin:
+        st.subheader("已注册用户")
+        users = auth.list_users()
+        if not users:
+            st.info("暂无注册用户。")
+        else:
+            st.caption(f"共 {len(users)} 名用户")
+            users_df = pd.DataFrame(users).rename(
+                columns={"email": "邮箱", "registered_at": "注册时间"}
+            )
+            for _, row in users_df.iterrows():
+                col_email, col_time, col_del = st.columns([3, 2, 1])
+                col_email.write(row["邮箱"])
+                col_time.write(row["注册时间"])
+                if col_del.button("删除", key=f"del_{row['邮箱']}"):
+                    if row["邮箱"] == st.session_state.user:
+                        st.error("不能删除当前登录账号")
+                    else:
+                        auth.delete_user(row["邮箱"])
+                        st.rerun()
