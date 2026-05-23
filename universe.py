@@ -24,6 +24,8 @@ SUBSECTOR_MAP: dict[str, list[str]] = {
     ],
     "Memory": [
         "MU", "WDC",
+        "005930.KS",  # Samsung Electronics
+        "000660.KS",  # SK Hynix
     ],
     "Packaging / Test": [
         "AMKR",
