@@ -1,12 +1,8 @@
-"""Alpha Vantage data fetching with disk cache (TTL 4h).
+"""yfinance data fetching with curl_cffi Chrome impersonation + disk cache (TTL 4h).
 
-Two API calls per ticker:
-  OVERVIEW                        → all fundamental ratios directly
-  TIME_SERIES_DAILY_ADJUSTED      → price history for momentum & technical
-
-Free tier: 25 requests/minute, 500/day.
-Sleep 2.5s between calls keeps us at ~24 req/min.
-Cold fetch for ~43 tickers ≈ 4 minutes; subsequent loads use cache.
+curl_cffi mimics a real Chrome browser at the TLS fingerprint level, which is
+much harder for Yahoo Finance to detect and block than plain HTTP headers.
+No API key required.
 """
 
 import os
@@ -17,94 +13,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import yfinance as yf
+from curl_cffi import requests as crequests
 
 CACHE_DIR = Path(os.environ.get("CACHE_DIR", ".cache"))
 CACHE_TTL_HOURS = 4
-AV_BASE = "https://www.alphavantage.co/query"
 
 log = logging.getLogger(__name__)
 
-
-def _make_session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update({"Accept": "application/json", "User-Agent": "Mozilla/5.0"})
-    retry = Retry(
-        total=3, backoff_factor=2,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"],
-    )
-    session.mount("https://", HTTPAdapter(max_retries=retry))
-    return session
-
-
-_SESSION = _make_session()
-
-
-def get_api_key() -> str | None:
-    return os.environ.get("AV_API_KEY") or None
-
-
-def _av_get(function: str, symbol: str, extra: dict | None = None) -> dict | None:
-    api_key = get_api_key()
-    if not api_key:
-        return None
-    params = {"function": function, "symbol": symbol, "apikey": api_key}
-    if extra:
-        params.update(extra)
-    try:
-        resp = _SESSION.get(AV_BASE, params=params, timeout=20)
-        resp.raise_for_status()
-        data = resp.json()
-        # AV returns {"Information": "..."} or {"Note": "..."} on quota/error
-        if "Information" in data or "Note" in data:
-            log.warning("AV quota/info message for %s %s: %s",
-                        function, symbol,
-                        data.get("Information") or data.get("Note"))
-            return None
-        if "Error Message" in data:
-            log.warning("AV error for %s %s: %s", function, symbol, data["Error Message"])
-            return None
-        return data
-    except Exception as e:
-        log.warning("AV request failed %s %s: %s", function, symbol, e)
-        return None
-
-
-def fetch_ticker(symbol: str) -> dict | None:
-    """Fetch overview + daily price history from Alpha Vantage (2 API calls)."""
-    overview = _av_get("OVERVIEW", symbol)
-    time.sleep(2.5)   # stay under 25 req/min free-tier limit
-
-    prices_raw = _av_get(
-        "TIME_SERIES_DAILY_ADJUSTED", symbol,
-        {"outputsize": "full", "datatype": "json"},
-    )
-    time.sleep(2.5)
-
-    if not overview and not prices_raw:
-        log.warning("No data returned for %s", symbol)
-        return None
-
-    # Parse price history into a clean list [{date, close}] newest first
-    ts = (prices_raw or {}).get("Time Series (Daily)", {})
-    history = [
-        {
-            "date":  date,
-            "close": float(vals.get("5. adjusted close") or vals.get("4. close") or 0),
-        }
-        for date, vals in ts.items()
-        if vals.get("5. adjusted close") or vals.get("4. close")
-    ]
-    # ts dict is already newest-first from AV
-
-    return {
-        "fetched_at": datetime.utcnow(),
-        "overview": overview or {},
-        "history":  history,      # [{date, close}] newest first
-    }
+# One shared session per process — reuses cookies and TLS connection
+_SESSION = crequests.Session(impersonate="chrome110")
 
 
 # ── Cache helpers ──────────────────────────────────────────────────────────────
@@ -140,6 +58,36 @@ def _save_cache(symbol: str, data: dict) -> None:
         log.warning("Cache write failed for %s: %s", symbol, e)
 
 
+# ── Fetch ──────────────────────────────────────────────────────────────────────
+
+def fetch_ticker(symbol: str, max_retries: int = 3) -> dict | None:
+    """Fetch all data via yfinance using a Chrome-impersonating curl_cffi session."""
+    for attempt in range(max_retries):
+        try:
+            t = yf.Ticker(symbol, session=_SESSION)
+            info = t.info or {}
+            return {
+                "fetched_at":            datetime.utcnow(),
+                "info":                  info,
+                "financials":            t.financials,
+                "quarterly_financials":  t.quarterly_financials,
+                "balance_sheet":         t.balance_sheet,
+                "cashflow":              t.cashflow,
+                "history_1y":            t.history(period="1y"),
+                "history_2y":            t.history(period="2y"),
+            }
+        except Exception as e:
+            msg = str(e).lower()
+            if ("too many requests" in msg or "429" in msg) and attempt < max_retries - 1:
+                wait = 2 ** (attempt + 2)
+                log.warning("Rate limited on %s, retrying in %ss…", symbol, wait)
+                time.sleep(wait)
+            else:
+                log.warning("Failed to fetch %s: %s", symbol, e)
+                return None
+    return None
+
+
 def load_ticker(symbol: str, force_refresh: bool = False) -> dict | None:
     if not force_refresh:
         cached = _load_cache(symbol)
@@ -162,7 +110,7 @@ def load_all(
         if progress_callback:
             progress_callback(i, total, symbol)
         result[symbol] = load_ticker(symbol, force_refresh=force_refresh)
-        # inter-ticker gap only (intra-ticker sleeps are in fetch_ticker)
+        time.sleep(0.5)
     if progress_callback:
         progress_callback(total, total, "")
     return result
