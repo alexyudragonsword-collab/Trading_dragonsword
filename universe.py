@@ -37,11 +37,18 @@ SECTOR_MAP: dict[str, dict[str, list[str]]] = {
         ],
     },
     "科技": {
-        "Cloud / AI Platform": [
+        # Magnificent Seven listed first so dedup assigns AAPL/MSFT/GOOGL/AMZN/META here
+        "Magnificent Seven": [
+            "AAPL",   # Apple
             "MSFT",   # Microsoft
             "GOOGL",  # Alphabet
             "AMZN",   # Amazon
+            "NVDA",   # NVIDIA (primary: 半导体 > Fabless Design; shown here for Mag7 context)
             "META",   # Meta Platforms
+            "TSLA",   # Tesla
+        ],
+        "Cloud / AI Platform": [
+            # MSFT, GOOGL, AMZN, META moved to Magnificent Seven
             "ORCL",   # Oracle
             "IBM",    # IBM
         ],
@@ -65,7 +72,7 @@ SECTOR_MAP: dict[str, dict[str, list[str]]] = {
             "S",      # SentinelOne
         ],
         "Hardware": [
-            "AAPL",   # Apple
+            # AAPL moved to Magnificent Seven
             "DELL",   # Dell Technologies
             "HPE",    # Hewlett Packard Enterprise
             "NTAP",   # NetApp
@@ -83,7 +90,12 @@ SECTOR_MAP: dict[str, dict[str, list[str]]] = {
     },
 }
 
-# ── Flatten with global dedup (KLIC appears in two semi sub-sectors) ──────────
+# ── Derived mappings ──────────────────────────────────────────────────────────
+#
+# SUBSECTOR_MAP / ALL_TICKERS are globally deduped (first-occurrence wins).
+# NVDA → primary: 半导体 > Fabless Design  (deduped out of Mag 7 in scoring)
+# KLIC → primary: Equipment / EDA          (deduped out of Packaging / Test)
+# The universe expander uses SECTOR_MAP directly to show full intended membership.
 
 _seen: set[str] = set()
 _subsector_map: dict[str, list[str]] = {}

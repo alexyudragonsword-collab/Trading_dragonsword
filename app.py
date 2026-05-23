@@ -173,15 +173,14 @@ if last_times:
 
 # ── Universe Overview ─────────────────────────────────────────────────────────
 
-with st.expander(f"📋 股票池（{len(ALL_TICKERS)} 只）", expanded=False):
+with st.expander(f"📋 股票池（{len(ALL_TICKERS)} 只，去重后）", expanded=False):
     for sector, subsectors in SECTOR_MAP.items():
         st.markdown(f"**{sector}**")
         cols = st.columns(len(subsectors))
-        for col, (subsector, _) in zip(cols, subsectors.items()):
-            deduped = SUBSECTOR_MAP.get(subsector, [])
+        for col, (subsector, tickers) in zip(cols, subsectors.items()):
             with col:
-                st.markdown(f"_{subsector}_ ({len(deduped)})")
-                for t in deduped:
+                st.markdown(f"_{subsector}_ ({len(tickers)})")
+                for t in tickers:
                     st.markdown(f"- {t}")
         st.divider()
 
