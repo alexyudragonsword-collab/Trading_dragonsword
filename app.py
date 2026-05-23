@@ -229,9 +229,24 @@ with st.expander(f"📋 股票池（{len(ALL_TICKERS)} 只，去重后）", expa
                     st.markdown(f"- {t}")
         st.divider()
 
+# ── Admin helper ──────────────────────────────────────────────────────────────
+
+def _is_admin(email: str) -> bool:
+    try:
+        raw = st.secrets.get("ADMIN_EMAILS", "")
+    except Exception:
+        raw = os.environ.get("ADMIN_EMAILS", "")
+    return email in [e.strip().lower() for e in raw.split(",") if e.strip()]
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab1, tab2, tab3 = st.tabs(["选股排名", "因子热力图", "个股详情"])
+_tab_labels = ["选股排名", "因子热力图", "个股详情"]
+if _is_admin(st.session_state.user):
+    _tab_labels.append("管理后台")
+
+_tabs = st.tabs(_tab_labels)
+tab1, tab2, tab3 = _tabs[0], _tabs[1], _tabs[2]
+tab_admin = _tabs[3] if len(_tabs) > 3 else None
 
 # ─── Tab 1: Screener Table ───────────────────────────────────────────────────
 
@@ -476,3 +491,27 @@ with tab3:
                 use_container_width=True,
                 height=580,
             )
+
+# ─── Tab 4: Admin ─────────────────────────────────────────────────────────────
+
+if tab_admin is not None:
+    with tab_admin:
+        st.subheader("已注册用户")
+        users = auth.list_users()
+        if not users:
+            st.info("暂无注册用户。")
+        else:
+            st.caption(f"共 {len(users)} 名用户")
+            users_df = pd.DataFrame(users).rename(
+                columns={"email": "邮箱", "registered_at": "注册时间"}
+            )
+            for _, row in users_df.iterrows():
+                col_email, col_time, col_del = st.columns([3, 2, 1])
+                col_email.write(row["邮箱"])
+                col_time.write(row["注册时间"])
+                if col_del.button("删除", key=f"del_{row['邮箱']}"):
+                    if row["邮箱"] == st.session_state.user:
+                        st.error("不能删除当前登录账号")
+                    else:
+                        auth.delete_user(row["邮箱"])
+                        st.rerun()

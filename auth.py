@@ -51,6 +51,20 @@ def register(email: str, password: str) -> bool | str:
     return True
 
 
+def list_users() -> list[dict]:
+    """Return all users sorted by registration date (no password data)."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT username, created_at FROM users ORDER BY created_at DESC"
+        ).fetchall()
+    return [{"email": r[0], "registered_at": r[1]} for r in rows]
+
+
+def delete_user(email: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM users WHERE username=?", (email.strip().lower(),))
+
+
 def verify(email: str, password: str) -> bool:
     email = email.strip().lower()
     with _conn() as c:
