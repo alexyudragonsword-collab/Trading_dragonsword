@@ -286,8 +286,9 @@ with tab3:
         raw = raw_data.get(selected)
         close = None
         if raw:
-            from factors import _to_close_series
-            close = _to_close_series(raw.get("history") or [])
+            hist = raw.get("history_1y")
+            if hist is not None and not hist.empty:
+                close = hist["Close"]
 
         if close is not None and len(close) > 10:
             ma50 = close.rolling(50).mean()
