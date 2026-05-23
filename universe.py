@@ -210,40 +210,48 @@ TICKER_NAMES: dict[str, str] = {
 
 # ── Derived mappings ──────────────────────────────────────────────────────────
 #
-# SUBSECTOR_MAP / ALL_TICKERS are globally deduped (first-occurrence wins).
-# NVDA → primary: 半导体 > Fabless Design  (deduped out of Mag 7 in scoring)
-# KLIC → primary: Equipment / EDA          (deduped out of Packaging / Test)
-# The universe expander uses SECTOR_MAP directly to show full intended membership.
+# SUBSECTOR_MAP: full membership, no dedup — same ticker may appear in multiple sub-sectors.
+# ALL_TICKERS:   deduped for data fetching (each ticker fetched once).
+# TICKER_TO_SUBSECTORS / TICKER_TO_SECTORS: all memberships per ticker.
+# TICKER_TO_SUBSECTOR / TICKER_TO_SECTOR:   primary (first) membership for table display.
 
+# Sub-sector → sector lookup (no dedup needed here)
+SUBSECTOR_TO_SECTOR: dict[str, str] = {
+    sub: sector
+    for sector, subsectors in SECTOR_MAP.items()
+    for sub in subsectors
+}
+
+# SUBSECTOR_MAP: no dedup
+SUBSECTOR_MAP: dict[str, list[str]] = {
+    sub: list(tickers)
+    for sector_subs in SECTOR_MAP.values()
+    for sub, tickers in sector_subs.items()
+}
+
+# ALL_TICKERS: deduped (preserves first-occurrence order)
 _seen: set[str] = set()
-_subsector_map: dict[str, list[str]] = {}
-_subsector_to_sector: dict[str, str] = {}
+_all: list[str] = []
+for _tickers in SUBSECTOR_MAP.values():
+    for _t in _tickers:
+        if _t not in _seen:
+            _seen.add(_t)
+            _all.append(_t)
+ALL_TICKERS: list[str] = _all
 
-for _sector, _subsectors in SECTOR_MAP.items():
-    for _sub, _tickers in _subsectors.items():
-        _subsector_to_sector[_sub] = _sector
-        _subsector_map[_sub] = []
-        for _t in _tickers:
-            if _t not in _seen:
-                _seen.add(_t)
-                _subsector_map[_sub].append(_t)
+# ticker → all sub-sectors it belongs to
+TICKER_TO_SUBSECTORS: dict[str, list[str]] = {}
+for _sub, _tickers in SUBSECTOR_MAP.items():
+    for _t in _tickers:
+        TICKER_TO_SUBSECTORS.setdefault(_t, []).append(_sub)
 
-SUBSECTOR_MAP: dict[str, list[str]] = _subsector_map
-SUBSECTOR_TO_SECTOR: dict[str, str] = _subsector_to_sector
-
-ALL_TICKERS: list[str] = [
-    ticker
-    for tickers in SUBSECTOR_MAP.values()
-    for ticker in tickers
-]
-
-TICKER_TO_SUBSECTOR: dict[str, str] = {
-    ticker: subsector
-    for subsector, tickers in SUBSECTOR_MAP.items()
-    for ticker in tickers
+# ticker → all top-level sectors it belongs to (deduped, order preserved)
+TICKER_TO_SECTORS: dict[str, list[str]] = {
+    t: list(dict.fromkeys(SUBSECTOR_TO_SECTOR[s] for s in subs))
+    for t, subs in TICKER_TO_SUBSECTORS.items()
 }
 
-TICKER_TO_SECTOR: dict[str, str] = {
-    ticker: SUBSECTOR_TO_SECTOR[subsector]
-    for ticker, subsector in TICKER_TO_SUBSECTOR.items()
-}
+# Primary (first) sub-sector and sector per ticker — used for table display
+TICKER_TO_SUBSECTOR: dict[str, str] = {t: subs[0] for t, subs in TICKER_TO_SUBSECTORS.items()}
+TICKER_TO_SECTOR: dict[str, str] = {t: sectors[0] for t, sectors in TICKER_TO_SECTORS.items()}
+

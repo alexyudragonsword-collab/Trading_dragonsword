@@ -15,7 +15,8 @@ import scorer as scorer_module
 from scorer import FACTOR_META, FACTOR_GROUPS, DEFAULT_GROUP_WEIGHTS
 from universe import (
     ALL_TICKERS, SECTOR_MAP, SUBSECTOR_MAP,
-    TICKER_TO_SUBSECTOR, TICKER_TO_SECTOR, SUBSECTOR_TO_SECTOR,
+    TICKER_TO_SUBSECTOR, TICKER_TO_SECTOR,
+    TICKER_TO_SUBSECTORS, TICKER_TO_SECTORS,
     TICKER_NAMES,
 )
 from utils import format_pct, format_ratio, format_number, normalize_weights
@@ -132,12 +133,12 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    # Sector / sub-sector filter
+    # Sector / sub-sector filter — ticker passes if ANY of its memberships match
     if selected_sectors and len(selected_sectors) < len(SECTOR_MAP):
-        keep = [t for t in df.index if TICKER_TO_SECTOR.get(t) in selected_sectors]
+        keep = [t for t in df.index if any(s in selected_sectors for s in TICKER_TO_SECTORS.get(t, []))]
         df = df.loc[keep]
     if selected_subsectors and len(selected_subsectors) < len(SUBSECTOR_MAP):
-        keep = [t for t in df.index if TICKER_TO_SUBSECTOR.get(t) in selected_subsectors]
+        keep = [t for t in df.index if any(s in selected_subsectors for s in TICKER_TO_SUBSECTORS.get(t, []))]
         df = df.loc[keep]
 
     # Market cap filter
