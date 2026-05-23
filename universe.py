@@ -79,13 +79,24 @@ SECTOR_MAP: dict[str, dict[str, list[str]]] = {
             "STX",    # Seagate
         ],
         "Internet": [
-            "BABA",   # Alibaba
-            "JD",     # JD.com
+            # BABA, JD moved to 中国科技股
             "SHOP",   # Shopify
             "EBAY",   # eBay
             "SNAP",   # Snap
             "PINS",   # Pinterest
             "SPOT",   # Spotify
+        ],
+        "中国科技股": [
+            "BABA",   # Alibaba（阿里巴巴）
+            "JD",     # JD.com（京东）
+            "BIDU",   # Baidu（百度）
+            "PDD",    # PDD Holdings / Pinduoduo（拼多多）
+            "NTES",   # NetEase（网易）
+            "BILI",   # Bilibili（哔哩哔哩）
+            "TCOM",   # Trip.com（携程）
+            "TME",    # Tencent Music Entertainment（腾讯音乐）
+            "FUTU",   # Futu Holdings（富途控股）
+            "BOSS",   # Kanzhun / BOSS 直聘
         ],
     },
 }
