@@ -16,6 +16,7 @@ from scorer import FACTOR_META, FACTOR_GROUPS, DEFAULT_GROUP_WEIGHTS
 from universe import (
     ALL_TICKERS, SECTOR_MAP, SUBSECTOR_MAP,
     TICKER_TO_SUBSECTOR, TICKER_TO_SECTOR, SUBSECTOR_TO_SECTOR,
+    TICKER_NAMES,
 )
 from utils import format_pct, format_ratio, format_number, normalize_weights
 
@@ -205,9 +206,10 @@ with tab1:
 
         show_df = filtered_df[list(display_cols.keys())].copy()
 
-        # Add sector and sub-sector columns
+        # Add sector, sub-sector and company name columns
         show_df.insert(0, "子板块", [TICKER_TO_SUBSECTOR.get(t, "—") for t in show_df.index])
         show_df.insert(0, "板块", [TICKER_TO_SECTOR.get(t, "—") for t in show_df.index])
+        show_df.insert(2, "公司名称", [TICKER_NAMES.get(t, "—") for t in show_df.index])
         show_df.index.name = "股票"
 
         st.subheader(f"共 {len(show_df)} 只股票")
@@ -298,13 +300,14 @@ with tab3:
         selected = st.selectbox(
             "选择股票", options=ranked_tickers,
             index=0,
-            format_func=lambda t: f"{t} (排名 #{int(filtered_df.loc[t, 'rank'])})",
+            format_func=lambda t: f"{t}  {TICKER_NAMES.get(t, '')}  (排名 #{int(filtered_df.loc[t, 'rank'])})",
             key="detail_ticker",
         )
 
         sector_label = TICKER_TO_SECTOR.get(selected, "")
         subsector_label = TICKER_TO_SUBSECTOR.get(selected, "")
-        st.subheader(f"{selected}  —  {sector_label} · {subsector_label}")
+        company_name = TICKER_NAMES.get(selected, "")
+        st.subheader(f"{selected}  {company_name}  —  {sector_label} · {subsector_label}")
 
         col_score, col_quality, col_subsector = st.columns(3)
         composite = filtered_df.loc[selected, "composite_score"]

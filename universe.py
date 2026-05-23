@@ -101,6 +101,113 @@ SECTOR_MAP: dict[str, dict[str, list[str]]] = {
     },
 }
 
+# ── Company names ─────────────────────────────────────────────────────────────
+
+TICKER_NAMES: dict[str, str] = {
+    # Fabless Design
+    "NVDA": "NVIDIA",
+    "AMD": "Advanced Micro Devices",
+    "QCOM": "Qualcomm",
+    "AVGO": "Broadcom",
+    "MRVL": "Marvell Technology",
+    "SWKS": "Skyworks Solutions",
+    "QRVO": "Qorvo",
+    "MPWR": "Monolithic Power Systems",
+    "MTSI": "MACOM Technology",
+    "SMTC": "Semtech",
+    "AMBA": "Ambarella",
+    "SLAB": "Silicon Laboratories",
+    "LSCC": "Lattice Semiconductor",
+    "CRUS": "Cirrus Logic",
+    "ALGM": "Allegro MicroSystems",
+    "POWI": "Power Integrations",
+    "SITM": "SiTime",
+    # IDM / Foundry
+    "INTC": "Intel",
+    "TXN": "Texas Instruments",
+    "ADI": "Analog Devices",
+    "MCHP": "Microchip Technology",
+    "ON": "onsemi",
+    "STM": "STMicroelectronics",
+    "NXPI": "NXP Semiconductors",
+    "WOLF": "Wolfspeed",
+    "DIOD": "Diodes Incorporated",
+    "GFS": "GlobalFoundries",
+    "TSM": "TSMC",
+    "0981.HK": "中芯国际 (SMIC)",
+    "1347.HK": "华虹半导体",
+    # Equipment / EDA
+    "AMAT": "Applied Materials",
+    "LRCX": "Lam Research",
+    "KLAC": "KLA Corporation",
+    "ASML": "ASML Holding",
+    "ONTO": "Onto Innovation",
+    "FORM": "FormFactor",
+    "ICHR": "Ichor Holdings",
+    "ACMR": "ACM Research",
+    "CAMT": "Camtek",
+    "COHU": "Cohu",
+    "KLIC": "Kulicke & Soffa",
+    "ACLS": "Axcelis Technologies",
+    "AEHR": "Aehr Test Systems",
+    # Memory
+    "MU": "Micron Technology",
+    "WDC": "Western Digital",
+    "005930.KS": "三星电子 (Samsung)",
+    "000660.KS": "SK 海力士 (SK Hynix)",
+    # Packaging / Test
+    "AMKR": "Amkor Technology",
+    # Magnificent Seven
+    "AAPL": "Apple",
+    "MSFT": "Microsoft",
+    "GOOGL": "Alphabet",
+    "AMZN": "Amazon",
+    "META": "Meta Platforms",
+    "TSLA": "Tesla",
+    # Cloud / AI Platform
+    "ORCL": "Oracle",
+    "IBM": "IBM",
+    # Software / SaaS
+    "ADBE": "Adobe",
+    "CRM": "Salesforce",
+    "NOW": "ServiceNow",
+    "WDAY": "Workday",
+    "INTU": "Intuit",
+    "SNOW": "Snowflake",
+    "MDB": "MongoDB",
+    "DDOG": "Datadog",
+    "TEAM": "Atlassian",
+    # Cybersecurity
+    "CRWD": "CrowdStrike",
+    "PANW": "Palo Alto Networks",
+    "FTNT": "Fortinet",
+    "ZS": "Zscaler",
+    "OKTA": "Okta",
+    "S": "SentinelOne",
+    # Hardware
+    "DELL": "Dell Technologies",
+    "HPE": "HP Enterprise",
+    "NTAP": "NetApp",
+    "STX": "Seagate",
+    # Internet
+    "SHOP": "Shopify",
+    "EBAY": "eBay",
+    "SNAP": "Snap",
+    "PINS": "Pinterest",
+    "SPOT": "Spotify",
+    # 中国科技股
+    "BABA": "阿里巴巴 (Alibaba)",
+    "JD": "京东 (JD.com)",
+    "BIDU": "百度 (Baidu)",
+    "PDD": "拼多多 (PDD Holdings)",
+    "NTES": "网易 (NetEase)",
+    "BILI": "哔哩哔哩 (Bilibili)",
+    "TCOM": "携程 (Trip.com)",
+    "TCEHY": "腾讯控股 (Tencent)",
+    "FUTU": "富途控股 (Futu)",
+    "BOSS": "BOSS 直聘 (Kanzhun)",
+}
+
 # ── Derived mappings ──────────────────────────────────────────────────────────
 #
 # SUBSECTOR_MAP / ALL_TICKERS are globally deduped (first-occurrence wins).
