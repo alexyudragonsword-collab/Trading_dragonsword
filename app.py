@@ -284,11 +284,7 @@ with tab3:
 
         # Price chart with MAs and MACD
         raw = raw_data.get(selected)
-        close = None
-        if raw:
-            hist = raw.get("history_1y")
-            if hist is not None and not hist.empty:
-                close = hist["Close"]
+        close = (raw or {}).get("close")
 
         if close is not None and len(close) > 10:
             ma50 = close.rolling(50).mean()

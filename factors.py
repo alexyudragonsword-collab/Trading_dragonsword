@@ -48,13 +48,12 @@ def compute_factors(symbol: str, raw: dict) -> dict | None:
     if raw is None:
         return None
 
-    info       = raw.get("info") or {}
-    financials = raw.get("financials")
-    hist_1y    = raw.get("history_1y")
-    hist_2y    = raw.get("history_2y")
+    info  = raw.get("info") or {}
+    close = raw.get("close")   # pd.Series with 2y of adjusted close prices
 
-    close_1y = hist_1y["Close"] if (hist_1y is not None and not hist_1y.empty) else None
-    close_2y = hist_2y["Close"] if (hist_2y is not None and not hist_2y.empty) else None
+    close_1y  = close.iloc[-252:] if (close is not None and len(close) >= 20) else close
+    close_2y  = close
+    financials = None   # not fetched in batch mode; revenueGrowth from info instead
 
     def _f(*keys):
         for k in keys:
